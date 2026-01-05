@@ -19,6 +19,6 @@ public class InfoController : ControllerBase
     [HttpGet]
     public async Task<ActionResult> Get()
     {
-        return Ok($"SSO OK : {_envSettings.SecretTest}");
+        return Ok($"SSO OK !!! : {_envSettings.SecretTest}");
     }
 }
