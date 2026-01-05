@@ -6,10 +6,8 @@ on:
 
 jobs:
   deploy:
-    # 1. Choix du Runner (Prod ou Dev)
     runs-on: [self-hosted, linux, "${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}"]
     
-    # 2. Choix de l'Environnement (Pour charger les bons secrets GitHub)
     environment: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Development' }}
 
     steps:
@@ -27,7 +25,6 @@ jobs:
 
     - name: Deploy
       run: |
-        # --- LOGIQUE BASH ---
         if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
           TARGET_ENV="Production"
         else
@@ -37,7 +34,6 @@ jobs:
         echo "Environnement détecté : $TARGET_ENV"
         echo "Génération du fichier .env..."
         
-        # On génère le fichier
         cat <<EOF > publish_output/.env
         ASPNETCORE_ENVIRONMENT=$TARGET_ENV
         ASPNETCORE_URLS=http://0.0.0.0:5000
@@ -50,18 +46,32 @@ jobs:
         echo "Copie des fichiers..."
         sudo mkdir -p /var/www/sso-api
         
-        # 1. On copie les fichiers classiques (DLL, JSON, etc.)
         sudo cp -r publish_output/* /var/www/sso-api/
         
-        # 2. [CORRECTION] On copie EXPLICITEMENT le fichier .env (car * l'oublie)
         sudo cp publish_output/.env /var/www/sso-api/.env
         
-        echo "Mise à jour de Systemd..."
-        sudo cp deployment/sso-api.service /etc/systemd/system/sso-api.service
+        echo "Création/Mise à jour du fichier service Systemd..."
+        
+        cat <<EOF | sudo tee /etc/systemd/system/sso-api.service > /dev/null
+        [Unit]
+        Description=Mon API SSO .NET ($TARGET_ENV)
+        After=network.target
+        [Service]
+        WorkingDirectory=/var/www/sso-api
+        ExecStart=/usr/bin/dotnet /var/www/sso-api/SSO.Api.dll
+        User=www-data
+        Restart=always
+        RestartSec=10
+        KillSignal=SIGINT
+        SyslogIdentifier=sso-api
+        EnvironmentFile=/var/www/sso-api/.env
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+
         sudo systemctl daemon-reload
 
         echo "Permissions..."
-        # On remet les droits
         sudo chown -R www-data:www-data /var/www/sso-api
         
         # Maintenant le fichier est sûr d'être là
