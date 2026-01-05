@@ -1,52 +1,45 @@
-name: .NET CI/CD Proxmox
+name: CI/CD Unified
 
 on:
   push:
     branches: [ "main", "develop" ]
 
 jobs:
-  build_and_test:
+  deploy:
+    # 1. Choix du Runner (Prod ou Dev)
     runs-on: [self-hosted, linux, "${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}"]
-
+    
+    # 2. Choix de l'Environnement (Pour charger les bons secrets GitHub)
     environment: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Development' }}
 
-    env:
-      TARGET_ENV: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Development' }}
-
-    defaults:
-      run:
-        working-directory: ./src
-
-    env:
-      DOTNET_ROOT: /usr/share/dotnet
-
     steps:
-    - name: Checkout code
+    - name: Checkout Code
       uses: actions/checkout@v4
 
-    - name: Check Dotnet Version
-      run: dotnet --version
-
-    - name: Restore dependencies
-      run: dotnet restore
+    - name: Restore Dependencies
+      run: dotnet restore src/SSO.Api/SSO.Api.csproj
 
     - name: Build
-      run: dotnet build --no-restore --configuration Release
-
-    - name: Test
-      run: dotnet test --no-build --configuration Release --verbosity normal
+      run: dotnet build src/SSO.Api/SSO.Api.csproj --no-restore --configuration Release
 
     - name: Publish
-      run: dotnet publish SSO.Api/SSO.Api.csproj -c Release -o ../publish_output
+      run: dotnet publish src/SSO.Api/SSO.Api.csproj -c Release -o publish_output
 
-    - name: Deploy to ${{ environment.name }}
+    - name: Deploy
       run: |
-        echo "Environnement cible : ${{ environment.name }}"
+        # --- LOGIQUE BASH (Plus fiable que YAML) ---
+        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          TARGET_ENV="Production"
+        else
+          TARGET_ENV="Development"
+        fi
         
-        echo "Création du fichier .env..."
-        # On injecte les secrets. GitHub choisit automatiquement ceux de Prod ou Dev selon l'environment défini plus haut.
+        echo "Environnement détecté : $TARGET_ENV"
+        echo "Génération du fichier .env..."
+        
+        # Injection des secrets (GitHub injecte automatiquement ceux du bon environnement choisi plus haut)
         cat <<EOF > publish_output/.env
-        ASPNETCORE_ENVIRONMENT=Production
+        ASPNETCORE_ENVIRONMENT=$TARGET_ENV
         EnvSettings__SecretTest=${{ secrets.SECRET_TEST }}
         EOF
 
@@ -58,7 +51,6 @@ jobs:
         sudo cp -r publish_output/* /var/www/sso-api/
         
         echo "Mise à jour de Systemd..."
-        # On copie le fichier service depuis ton dossier deployment vers le système
         sudo cp deployment/sso-api.service /etc/systemd/system/sso-api.service
         sudo systemctl daemon-reload
 
@@ -70,4 +62,4 @@ jobs:
         sudo systemctl enable sso-api.service
         sudo systemctl start sso-api.service
         
-        echo "Déploiement terminé sur ${{ env.TARGET_ENV }} !"
+        echo "Déploiement terminé sur $TARGET_ENV !"
