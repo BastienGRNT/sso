@@ -41,7 +41,7 @@ jobs:
 
         echo "Copy files"
         sudo mkdir -p /var/www/sso-api
-        sudo cp -r publish_output/* /var/www/sso-api/
+        sudo cp -r ../publish_output/* /var/www/sso-api/
 
         echo "Generate appsettings.Production.json"
         sudo tee /var/www/sso-api/appsettings.Production.json <<EOF
