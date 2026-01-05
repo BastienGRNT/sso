@@ -2,11 +2,13 @@ name: .NET CI/CD Proxmox
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
 
 jobs:
   build_and_test:
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, linux, "${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}"]
+
+    environment: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Development' }}
 
     defaults:
       run:
@@ -34,27 +36,35 @@ jobs:
     - name: Publish
       run: dotnet publish SSO.Api/SSO.Api.csproj -c Release -o ../publish_output
 
-    - name: Deploy & generate secrets
+    - name: Deploy to ${{ environment.name }}
       run: |
-        echo "Stop service"
-        sudo systemctl stop sso-api.service || true
-
-        echo "Copy files"
-        sudo mkdir -p /var/www/sso-api
-        sudo cp -r ../publish_output/* /var/www/sso-api/
-
-        echo "Generate appsettings.Production.json"
-        sudo tee /var/www/sso-api/appsettings.Production.json <<EOF
-        {
-          "EnvSettings": {
-            "SecretTest": "${{ secrets.SECRET_TEST }}"
-          }
-        }
+        echo "Environnement cible : ${{ environment.name }}"
+        
+        echo "Création du fichier .env..."
+        # On injecte les secrets. GitHub choisit automatiquement ceux de Prod ou Dev selon l'environment défini plus haut.
+        cat <<EOF > publish_output/.env
+        ASPNETCORE_ENVIRONMENT=Production
+        EnvSettings__SecretTest=${{ secrets.SECRET_TEST }}
         EOF
 
-        echo "Secure permissions"
-        sudo chown -R www-data:www-data /var/www/sso-api
-        sudo chmod 600 /var/www/sso-api/appsettings.Production.json
+        echo "Arrêt du service..."
+        sudo systemctl stop sso-api.service || true
 
-        echo "Start service"
+        echo "Copie des fichiers..."
+        sudo mkdir -p /var/www/sso-api
+        sudo cp -r publish_output/* /var/www/sso-api/
+        
+        echo "Mise à jour de Systemd..."
+        # On copie le fichier service depuis ton dossier deployment vers le système
+        sudo cp deployment/sso-api.service /etc/systemd/system/sso-api.service
+        sudo systemctl daemon-reload
+
+        echo "Permissions..."
+        sudo chown -R www-data:www-data /var/www/sso-api
+        sudo chmod 600 /var/www/sso-api/.env
+
+        echo "Démarrage..."
+        sudo systemctl enable sso-api.service
         sudo systemctl start sso-api.service
+        
+        echo "Déploiement terminé sur ${{ environment.name }} !"
