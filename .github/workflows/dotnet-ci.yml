@@ -1,4 +1,4 @@
-name: .NET CI
+name: .NET CI/CD Proxmox
 
 on:
   push:
@@ -7,25 +7,68 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build_and_test:
+    # 1. On cible TON runner Proxmox
+    # Assure-toi d'avoir mis le label 'dotnet' lors du ./config.sh, sinon mets juste [self-hosted, linux]
+    runs-on: [self-hosted, linux]
+
+    # 2. On définit le dossier de travail par défaut pour toutes les étapes
+    defaults:
+      run:
+        working-directory: ./src
 
     env:
+      # Injection des secrets (fonctionne pareil en self-hosted)
       EnvSettings__SecretTest: ${{ secrets.SECRET_TEST }}
+      # On force l'utilisation des installations globales (celles qu'on a faites manuellement)
+      DOTNET_ROOT: /usr/share/dotnet
 
     steps:
-    - uses: actions/checkout@v4
+    # Étape A : Récupérer le code
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 10.0.x
+    # Étape B : Supprimée (setup-dotnet) !
+    # On utilise directement le dotnet installé sur la machine.
+    - name: Check Dotnet Version
+      run: dotnet --version
 
+    # Étape C : Restore
+    # Grâce au "defaults.run.working-directory", il va chercher la solution dans ./src tout seul
     - name: Restore dependencies
       run: dotnet restore
 
+    # Étape D : Build
     - name: Build
       run: dotnet build --no-restore --configuration Release
 
+    # Étape E : Test
     - name: Test
       run: dotnet test --no-build --configuration Release --verbosity normal
+
+      # ... Tes étapes de Build et Test ...
+
+    # Étape F : Publish (Créer les fichiers finaux)
+    - name: Publish
+      run: dotnet publish SSO.Api/SSO.Api.csproj -c Release -o ../publish_output
+
+    # Étape G : Déploiement Local (Simple copie)
+    - name: Deploy Locally
+      run: |
+        echo "🚀 Arrêt du service..."
+        # On arrête le site le temps de la copie (si le service existe déjà)
+        # || true permet de ne pas planter si le service n'existe pas encore
+        sudo systemctl stop sso-api.service || true
+
+        echo "📂 Copie des fichiers..."
+        # On crée le dossier s'il n'existe pas
+        sudo mkdir -p /var/www/sso-api
+        
+        # On copie le contenu du dossier publish vers le dossier du site
+        sudo cp -r ../publish_output/* /var/www/sso-api/
+        
+        # On s'assure que les permissions sont bonnes (user www-data souvent utilisé pour le web)
+        sudo chown -R www-data:www-data /var/www/sso-api
+        
+        echo "✅ Redémarrage..."
+        sudo systemctl start sso-api.service || true
