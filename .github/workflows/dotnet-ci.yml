@@ -10,6 +10,9 @@ jobs:
 
     environment: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Development' }}
 
+    env:
+      TARGET_ENV: ${{ github.ref == 'refs/heads/main' && 'Production' || 'Development' }}
+
     defaults:
       run:
         working-directory: ./src
@@ -67,4 +70,4 @@ jobs:
         sudo systemctl enable sso-api.service
         sudo systemctl start sso-api.service
         
-        echo "Déploiement terminé sur ${{ environment.name }} !"
+        echo "Déploiement terminé sur ${{ env.TARGET_ENV }} !"
