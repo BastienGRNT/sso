@@ -25,7 +25,7 @@ jobs:
     - name: Publish
       run: dotnet publish src/SSO.Api/SSO.Api.csproj -c Release -o publish_output
 
-    - name: 🚀 Deploy
+    - name: Deploy
       run: |
         # --- LOGIQUE BASH ---
         if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
