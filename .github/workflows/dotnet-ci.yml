@@ -25,9 +25,9 @@ jobs:
     - name: Publish
       run: dotnet publish src/SSO.Api/SSO.Api.csproj -c Release -o publish_output
 
-    - name: Deploy
+    - name: 🚀 Deploy
       run: |
-        # --- LOGIQUE BASH (Plus fiable que YAML) ---
+        # --- LOGIQUE BASH ---
         if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
           TARGET_ENV="Production"
         else
@@ -37,7 +37,7 @@ jobs:
         echo "Environnement détecté : $TARGET_ENV"
         echo "Génération du fichier .env..."
         
-        # Injection des secrets (GitHub injecte automatiquement ceux du bon environnement choisi plus haut)
+        # On génère le fichier
         cat <<EOF > publish_output/.env
         ASPNETCORE_ENVIRONMENT=$TARGET_ENV
         EnvSettings__SecretTest=${{ secrets.SECRET_TEST }}
@@ -48,14 +48,22 @@ jobs:
 
         echo "Copie des fichiers..."
         sudo mkdir -p /var/www/sso-api
+        
+        # 1. On copie les fichiers classiques (DLL, JSON, etc.)
         sudo cp -r publish_output/* /var/www/sso-api/
+        
+        # 2. [CORRECTION] On copie EXPLICITEMENT le fichier .env (car * l'oublie)
+        sudo cp publish_output/.env /var/www/sso-api/.env
         
         echo "Mise à jour de Systemd..."
         sudo cp deployment/sso-api.service /etc/systemd/system/sso-api.service
         sudo systemctl daemon-reload
 
         echo "Permissions..."
+        # On remet les droits
         sudo chown -R www-data:www-data /var/www/sso-api
+        
+        # Maintenant le fichier est sûr d'être là
         sudo chmod 600 /var/www/sso-api/.env
 
         echo "Démarrage..."
