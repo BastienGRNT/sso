@@ -53,22 +53,32 @@ jobs:
       run: dotnet publish SSO.Api/SSO.Api.csproj -c Release -o ../publish_output
 
     # Étape G : Déploiement Local (Simple copie)
+    # Étape G : Déploiement Local avec génération de sso.env
     - name: Deploy Locally
       run: |
+        echo "⚙️ Génération du fichier sso.env..."
+        
+        # C'est ICI que tu mets tes 25 variables.
+        # Le format est : NOM_VARIABLE__CLE=VALEUR
+        cat <<EOF > ../publish_output/sso.env
+        ASPNETCORE_ENVIRONMENT=Production
+        EnvSettings__SecretTest=${{ secrets.SECRET_TEST }}
+        EOF
+
         echo "🚀 Arrêt du service..."
-        # On arrête le site le temps de la copie (si le service existe déjà)
-        # || true permet de ne pas planter si le service n'existe pas encore
         sudo systemctl stop sso-api.service || true
 
         echo "📂 Copie des fichiers..."
-        # On crée le dossier s'il n'existe pas
         sudo mkdir -p /var/www/sso-api
         
-        # On copie le contenu du dossier publish vers le dossier du site
+        # On copie tout le dossier publish (qui contient maintenant sso.env)
         sudo cp -r ../publish_output/* /var/www/sso-api/
         
-        # On s'assure que les permissions sont bonnes (user www-data souvent utilisé pour le web)
+        # Permissions de sécurité (Important !)
+        # www-data devient propriétaire
         sudo chown -R www-data:www-data /var/www/sso-api
+        # Seul le propriétaire peut lire ce fichier (car il contient des mots de passe)
+        sudo chmod 600 /var/www/sso-api/sso.env
         
         echo "✅ Redémarrage..."
         sudo systemctl start sso-api.service || true
