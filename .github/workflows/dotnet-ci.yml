@@ -40,6 +40,7 @@ jobs:
         # On génère le fichier
         cat <<EOF > publish_output/.env
         ASPNETCORE_ENVIRONMENT=$TARGET_ENV
+        ASPNETCORE_URLS=http://0.0.0.0:5000
         EnvSettings__SecretTest=${{ secrets.SECRET_TEST }}
         EOF
 
