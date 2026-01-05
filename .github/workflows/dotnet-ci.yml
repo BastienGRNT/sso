@@ -3,82 +3,58 @@ name: .NET CI/CD Proxmox
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
   build_and_test:
-    # 1. On cible TON runner Proxmox
-    # Assure-toi d'avoir mis le label 'dotnet' lors du ./config.sh, sinon mets juste [self-hosted, linux]
     runs-on: [self-hosted, linux]
 
-    # 2. On définit le dossier de travail par défaut pour toutes les étapes
     defaults:
       run:
         working-directory: ./src
 
     env:
-      # Injection des secrets (fonctionne pareil en self-hosted)
-      EnvSettings__SecretTest: ${{ secrets.SECRET_TEST }}
-      # On force l'utilisation des installations globales (celles qu'on a faites manuellement)
       DOTNET_ROOT: /usr/share/dotnet
 
     steps:
-    # Étape A : Récupérer le code
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # Étape B : Supprimée (setup-dotnet) !
-    # On utilise directement le dotnet installé sur la machine.
     - name: Check Dotnet Version
       run: dotnet --version
 
-    # Étape C : Restore
-    # Grâce au "defaults.run.working-directory", il va chercher la solution dans ./src tout seul
     - name: Restore dependencies
       run: dotnet restore
 
-    # Étape D : Build
     - name: Build
       run: dotnet build --no-restore --configuration Release
 
-    # Étape E : Test
     - name: Test
       run: dotnet test --no-build --configuration Release --verbosity normal
 
-      # ... Tes étapes de Build et Test ...
-
-    # Étape F : Publish (Créer les fichiers finaux)
     - name: Publish
       run: dotnet publish SSO.Api/SSO.Api.csproj -c Release -o ../publish_output
 
-    # Étape G : Déploiement Local (Simple copie)
-    # Étape G : Déploiement Local avec génération de sso.env
-    - name: Deploy Locally
+    - name: Deploy & generate secrets
       run: |
-        echo "⚙️ Génération du fichier sso.env..."
-        
-        # C'est ICI que tu mets tes 25 variables.
-        # Le format est : NOM_VARIABLE__CLE=VALEUR
-        cat <<EOF > ../publish_output/sso.env
-        ASPNETCORE_ENVIRONMENT=Production
-        EnvSettings__SecretTest=${{ secrets.SECRET_TEST }}
-        EOF
-
-        echo "🚀 Arrêt du service..."
+        echo "Stop service"
         sudo systemctl stop sso-api.service || true
 
-        echo "📂 Copie des fichiers..."
+        echo "Copy files"
         sudo mkdir -p /var/www/sso-api
-        
-        # On copie tout le dossier publish (qui contient maintenant sso.env)
-        sudo cp -r ../publish_output/* /var/www/sso-api/
-        
-        # Permissions de sécurité (Important !)
-        # www-data devient propriétaire
+        sudo cp -r ./publish_output/* /var/www/sso-api/
+
+        echo "Generate appsettings.Production.json"
+        sudo tee /var/www/sso-api/appsettings.Production.json <<EOF
+        {
+          "EnvSettings": {
+            "SecretTest": "${{ secrets.SECRET_TEST }}"
+          }
+        }
+        EOF
+
+        echo "Secure permissions"
         sudo chown -R www-data:www-data /var/www/sso-api
-        # Seul le propriétaire peut lire ce fichier (car il contient des mots de passe)
-        sudo chmod 600 /var/www/sso-api/sso.env
-        
-        echo "✅ Redémarrage..."
-        sudo systemctl start sso-api.service || true
+        sudo chmod 600 /var/www/sso-api/appsettings.Production.json
+
+        echo "Start service"
+        sudo systemctl start sso-api.service
